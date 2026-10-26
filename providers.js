@@ -225,4 +225,4 @@ async function getVideo(id) {
   throw unavailable("That video could not be found.", 404);
 }
 
-module.exports = { searchVideos, getVideo };
+module.exports = { searchVideos, getVideo, allowedMetadata: allowed };

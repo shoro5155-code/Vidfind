@@ -56,19 +56,31 @@
   .topics a:hover { color: var(--accent); border-color: var(--accent); }
   body.searched .topics { display: none; }
   .catalog-note { max-width: 740px; margin: 0 auto; padding: 12px 24px 36px; text-align: center; color: var(--muted); font-size: 13px; }
+  .source-tabs { display: flex; justify-content: center; gap: 8px; }
+  .source-tabs a { text-decoration: none; padding: 8px 18px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 14px; }
+  .source-tabs a[aria-current="page"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  body.searched header { flex-wrap: wrap; gap: 12px 20px; }
+  body.searched .source-tabs { flex-basis: 100%; }
+  .attribution { display: block; margin: 0 auto 12px; width: max-content; }
+  .attribution img { width: 120px; height: auto; background: #fff; padding: 8px; border-radius: 4px; }
 
   @media (max-width: 600px) { body.searched header { flex-direction: column; gap: 10px; } }
   @media (prefers-reduced-motion: reduce) { header { transition: none; } }
 </style>
 </head>
-<body class="__VDF_BODY_CLASS__" data-server-rendered="__VDF_RENDERED__" data-next-token="__VDF_NEXT_TOKEN__">
+<body class="__VDF_BODY_CLASS__" data-server-rendered="__VDF_RENDERED__" data-next-token="__VDF_NEXT_TOKEN__" data-source="__VDF_SOURCE__">
 <header>
   <h1 class="logo" id="logo" title="Back to start">Vid<span>Find</span></h1>
   <form id="search" role="search">
+    <input name="source" type="hidden" value="__VDF_SOURCE__">
     <input id="q" name="q" type="search" value="__VDF_QUERY__" placeholder="Search for videos" autocomplete="off" aria-label="Search for videos">
     <button class="go" type="submit">Search</button>
   </form>
-  <p class="hint">Find public videos. Play them here.</p>
+  <p class="hint">Find videos. Watch them here.</p>
+  <nav class="source-tabs" aria-label="Video sources">
+    <a id="youtube-source" href="__VDF_YOUTUBE_LINK__" __VDF_YOUTUBE_CURRENT__>YouTube</a>
+    <a id="direct-source" href="__VDF_DIRECT_LINK__" __VDF_DIRECT_CURRENT__>Direct videos</a>
+  </nav>
   <nav class="topics" aria-label="Try a topic">
     <a href="/?q=history">History</a><a href="/?q=science">Science</a><a href="/?q=computers">Technology</a><a href="/?q=travel">Travel</a>
   </nav>
@@ -81,11 +93,16 @@
   <button class="more" id="more" __VDF_MORE_HIDDEN__>Show more</button>
 </main>
 
-<footer class="catalog-note">Direct playback from NASA and selected Internet Archive collections. The catalog filters explicit material and covers a smaller selection than a general video search. Your connection must allow the publisher’s video host.</footer>
+<footer class="catalog-note">
+  <a class="attribution" href="__VDF_YOUTUBE_LINK__" __VDF_YOUTUBE_HIDDEN__><img src="/youtube-logo.svg" alt="YouTube"></a>
+  <p>__VDF_CATALOG_NOTE__</p>
+  <a href="/privacy">Privacy</a> · <a href="https://www.youtube.com/t/terms">YouTube Terms</a> · <a href="https://policies.google.com/privacy">Google Privacy Policy</a>
+</footer>
 
 <script>
   const $ = (id) => document.getElementById(id);
   let currentQuery = new URLSearchParams(location.search).get("q") || "";
+  const currentSource = document.body.dataset.source || "youtube";
   let nextToken = document.body.dataset.nextToken || null;
   let searchRequest = 0;
 
@@ -95,6 +112,7 @@
   function openDocumentSearch(q, pageToken) {
     const url = new URL("/", location.href);
     url.searchParams.set("q", q);
+    url.searchParams.set("source", currentSource);
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     $("status").textContent = "Opening search results…";
     location.assign(url.href);
@@ -108,7 +126,7 @@
     $("notice").hidden = true;
     if (!append) $("grid").innerHTML = "";
     try {
-      const params = new URLSearchParams({ q });
+      const params = new URLSearchParams({ q, source: currentSource });
       if (pageToken) params.set("pageToken", pageToken);
       const endpoint = new URL("/api/search", location.href);
       endpoint.search = params.toString();
@@ -125,7 +143,7 @@
       nextToken = data.nextPageToken;
       for (const v of data.results) addCard(v);
       const count = $("grid").children.length;
-      $("status").textContent = count ? `${count} videos for “${q}”` : `No direct videos found for “${q}”. Try another topic.`;
+      $("status").textContent = count ? `${count} videos for “${q}”` : `No videos found for “${q}”. Try another topic.`;
       $("more").hidden = !nextToken;
       $("notice").textContent = data.notice || "";
       $("notice").hidden = !data.notice;
@@ -139,7 +157,7 @@
   function addCard(v) {
     const b = document.createElement("a");
     b.className = "card";
-    b.href = "/watch?" + new URLSearchParams({ id: v.id, q: currentQuery });
+    b.href = "/watch?" + new URLSearchParams({ id: v.id, q: currentQuery, source: currentSource });
     const title = decode(v.title), channel = decode(v.channel);
     const published = new Date(v.published);
     const date = Number.isNaN(published.getTime()) ? "" : published.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -154,7 +172,9 @@
     currentQuery = q; nextToken = null;
     document.body.classList.add("searched");
     $("main").hidden = false;
-    history.replaceState(null, "", "?q=" + encodeURIComponent(q));
+    history.replaceState(null, "", "?" + new URLSearchParams({ q, source: currentSource }));
+    $("youtube-source").href = "/?" + new URLSearchParams({ q, source: "youtube" });
+    $("direct-source").href = "/?" + new URLSearchParams({ q, source: "direct" });
     runSearch(q, false);
   });
   $("more").addEventListener("click", () => runSearch(currentQuery, true));

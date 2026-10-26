@@ -20,6 +20,32 @@ function nasaItem() {
 }
 global.fetch = async (input, options) => {
   const url = new URL(input);
+  if (url.origin === "https://www.googleapis.com") {
+    if (url.searchParams.get("key") !== "local-test-key") throw Error("Missing YouTube test key");
+    const q = url.searchParams.get("q");
+    if (q === "quota-error") return Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 });
+    const second = url.searchParams.has("pageToken");
+    const snippet = { title: "Paper &amp; planes", channelTitle: "Crafts", description: "Fold a paper airplane.",
+      publishedAt: "2026-10-25T12:00:00Z", thumbnails: { medium: { url: "https://i.ytimg.com/vi/abc123DEF45/mqdefault.jpg" } } };
+    if (url.pathname === "/youtube/v3/search") {
+      for (const [name, expected] of Object.entries({ type: "video", safeSearch: "strict", videoEmbeddable: "true", videoSyndicated: "true" })) {
+        if (url.searchParams.get(name) !== expected) throw Error("Incorrect YouTube setting: " + name);
+      }
+      return Response.json({ nextPageToken: second ? null : "second-page", items: [
+        { id: { videoId: second ? "def456GHI78" : "abc123DEF45" }, snippet },
+        { id: { videoId: "invalid" }, snippet },
+        { id: { videoId: "hidden00001" }, snippet: { ...snippet, title: "NSFW" } },
+      ] });
+    }
+    if (url.pathname === "/youtube/v3/videos") {
+      const id = url.searchParams.get("id");
+      return Response.json({ items: [{ id, snippet,
+        status: { privacyStatus: id === "private0001" ? "private" : "public", embeddable: id !== "noembed0001" },
+        contentDetails: { contentRating: id === "restricted1" ? { ytRating: "ytAgeRestricted" } : {} },
+      }] });
+    }
+    throw Error("Unexpected YouTube API resource");
+  }
   if (!options.headers["User-Agent"].includes("VidFind/")) throw Error("Missing publisher User-Agent");
   if (url.origin === "https://archive.org" && url.pathname === "/advancedsearch.php") {
     const q = url.searchParams.get("q");

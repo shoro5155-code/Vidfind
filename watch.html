@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="__VDF_REFERRER__">
 <title>__VDF_TITLE__ · VidFind</title>
 <style>
   :root { color-scheme: light dark; --bg: #f6f7fb; --surface: #fff; --fg: #161a2b; --muted: #5d6480; --line: #dde1ee; --accent: #3b4fd8; }
@@ -15,12 +16,16 @@
   main { max-width: 1008px; margin: 0 auto; padding: 24px 24px 56px; }
   a { color: var(--accent); } a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
   .back { display: inline-block; margin-bottom: 18px; text-decoration: none; }
-  video { display: block; width: 100%; max-height: 70vh; aspect-ratio: 16/9; background: #000; border-radius: 14px; }
+  video, iframe { display: block; width: 100%; aspect-ratio: 16/9; background: #000; border: 0; border-radius: 14px; }
+  video { max-height: 70vh; }
   h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.3; margin: 22px 0 8px; }
   .meta, .status, .note { color: var(--muted); font-size: 14px; }
   .description { white-space: pre-line; overflow-wrap: anywhere; }
   .error { padding: 20px; border: 1px solid var(--line); border-radius: 14px; }
   .file { display: inline-block; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 18px; text-decoration: none; font-weight: 600; font-size: 14px; }
+  .player-options { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+  .player-options span { color: var(--muted); font-size: 14px; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -29,20 +34,24 @@
   <a class="back" href="__VDF_BACK__">← Back to results</a>
   <p class="error" __VDF_ERROR_HIDDEN__>__VDF_ERROR__</p>
   <section __VDF_VIDEO_HIDDEN__ aria-label="Watch video">
-    <video id="video" controls autoplay playsinline preload="metadata" poster="__VDF_POSTER__" aria-label="__VDF_TITLE__">
-      __VDF_SOURCES__
-      Your browser cannot play this video. Use “Open video file” below.
-    </video>
-    <p class="status" id="playback-status" role="status">Press play if the video does not start automatically.</p>
+    __VDF_PLAYER__
+    <p class="status" id="playback-status" role="status">__VDF_PLAYER_STATUS__</p>
+    <div class="player-options" __VDF_YOUTUBE_HIDDEN__>
+      <span>__VDF_PLAYER_MODE__</span>
+      <a class="file" href="__VDF_OTHER_PLAYER__">__VDF_OTHER_PLAYER_MODE__</a>
+      <a class="file" href="__VDF_DIRECT_LINK__">Search direct videos</a>
+    </div>
     <h1>__VDF_TITLE__</h1>
     <p class="meta">__VDF_CHANNEL__</p>
-    <a class="file" href="__VDF_FILE__" target="_blank" rel="noopener noreferrer">Open video file ↗</a>
+    <a class="file" href="__VDF_FILE__" __VDF_FILE_HIDDEN__ target="_blank" rel="noopener noreferrer">Open video file ↗</a>
     <p class="description">__VDF_DESCRIPTION__</p>
-    <p class="note">This video plays directly from its publisher. The publisher’s file host must be allowed by your connection.</p>
+    <p class="note">__VDF_PLAYER_NOTE__</p>
   </section>
+  <footer><a href="/privacy">Privacy</a> · <a href="https://www.youtube.com/t/terms">YouTube Terms</a> · <a href="https://policies.google.com/privacy">Google Privacy Policy</a></footer>
 </main>
 <script>
   const video = document.getElementById("video");
+  if (video) {
   const status = document.getElementById("playback-status");
   const sources = video.querySelectorAll("source");
   let failed = 0;
@@ -53,6 +62,7 @@
   video.addEventListener("playing", () => { status.hidden = true; });
   video.addEventListener("error", showError);
   sources.forEach((source) => source.addEventListener("error", () => { if (++failed >= sources.length) showError(); }));
+  }
 </script>
 </body>
 </html>
