@@ -18,6 +18,7 @@
     :root { --bg: #0f1220; --surface: #181c2e; --fg: #e9ebf5; --muted: #9aa1bd; --line: #2a3050; --accent: #8a9bff; --accent-ink: #0f1220; color-scheme: dark; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--body); }
   a { color: inherit; }
   button, input { font: inherit; }
@@ -59,20 +60,20 @@
   @media (prefers-reduced-motion: reduce) { header { transition: none; } }
 </style>
 </head>
-<body>
+<body class="__VDF_BODY_CLASS__" data-server-rendered="__VDF_RENDERED__" data-next-token="__VDF_NEXT_TOKEN__">
 <header>
   <h1 class="logo" id="logo" title="Back to start">Vid<span>Find</span></h1>
   <form id="search" role="search">
-    <input id="q" name="q" type="search" placeholder="Search for videos" autocomplete="off" aria-label="Search for videos">
+    <input id="q" name="q" type="search" value="__VDF_QUERY__" placeholder="Search for videos" autocomplete="off" aria-label="Search for videos">
     <button class="go" type="submit">Search</button>
   </form>
   <p class="hint">Results come straight to this page.</p>
 </header>
 
-<main id="main" hidden>
-  <p class="status" id="status" aria-live="polite"></p>
-  <div class="grid" id="grid"></div>
-  <button class="more" id="more" hidden>Show more</button>
+<main id="main" __VDF_MAIN_HIDDEN__>
+  <p class="status" id="status" aria-live="polite">__VDF_STATUS__</p>
+  <div class="grid" id="grid">__VDF_RESULTS__</div>
+  <button class="more" id="more" __VDF_MORE_HIDDEN__>Show more</button>
 </main>
 
 <div class="player" id="player" hidden>
@@ -84,26 +85,46 @@
 
 <script>
   const $ = (id) => document.getElementById(id);
-  let currentQuery = "", nextToken = null;
+  let currentQuery = new URLSearchParams(location.search).get("q") || "";
+  let nextToken = document.body.dataset.nextToken || null;
 
   function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
   function decode(s) { const t = document.createElement("textarea"); t.innerHTML = s; return t.value; }
 
+  function openDocumentSearch(q, pageToken) {
+    const url = new URL("/", location.href);
+    url.searchParams.set("q", q);
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    $("status").textContent = "Opening search results…";
+    location.assign(url.href);
+  }
+
   async function runSearch(q, append) {
+    const pageToken = append ? nextToken : null;
     $("status").textContent = append ? "Loading more…" : `Searching for “${q}”…`;
+    $("more").hidden = true;
+    if (!append) $("grid").innerHTML = "";
     try {
       const params = new URLSearchParams({ q });
-      if (append && nextToken) params.set("pageToken", nextToken);
-      const r = await fetch("/api/search?" + params);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "Search failed.");
+      if (pageToken) params.set("pageToken", pageToken);
+      const endpoint = new URL("/api/search", location.href);
+      endpoint.search = params.toString();
+      const r = await fetch(endpoint.href, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      let data;
+      try { data = JSON.parse(await r.text()); }
+      catch (_) { return openDocumentSearch(q, pageToken); }
+      if (!r.ok) throw new Error(data?.error || "Search failed.");
+      if (!data || !Array.isArray(data.results)) return openDocumentSearch(q, pageToken);
       nextToken = data.nextPageToken;
-      if (!append) $("grid").innerHTML = "";
       for (const v of data.results) addCard(v);
       const count = $("grid").children.length;
       $("status").textContent = count ? `${count} videos for “${q}”` : `No videos found for “${q}”. Try different words.`;
       $("more").hidden = !nextToken || !data.results.length;
     } catch (e) {
+      if (e.name === "TypeError" || e.name === "SyntaxError") return openDocumentSearch(q, pageToken);
       $("status").textContent = "Couldn't search right now: " + e.message;
     }
   }
@@ -142,9 +163,15 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("player").hidden) closePlayer(); });
   $("logo").addEventListener("click", () => { location.href = "/"; });
 
+  document.querySelectorAll(".card[data-video-id]").forEach((card) => {
+    card.addEventListener("click", () => openPlayer(card.dataset.videoId, card.dataset.videoTitle));
+  });
+
   // Support links like yoursite.com/?q=cooking
   const start = new URLSearchParams(location.search).get("q");
-  if (start) { $("q").value = start; $("search").requestSubmit(); }
+  if (start && document.body.dataset.serverRendered !== "true") {
+    $("q").value = start; $("search").requestSubmit();
+  }
 </script>
 </body>
 </html>

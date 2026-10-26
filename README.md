@@ -54,6 +54,11 @@ the ZIP, or the GitHub repository. Render supplies `PORT` automatically.
 
 ## Notes
 
+- If a background search response cannot be read, the browser opens a normal
+  results page rendered by the server. Direct `/?q=...` links also render their
+  results on the server, without requiring the browser to parse search JSON.
+- Run `npm test` for the search and browser-fallback regression checks. Tests use
+  a sample search provider and do not need the real API key or use its quota.
 - Safe search is **off** by default. To turn it back on, set the environment variable
   `SAFE_SEARCH` to `moderate` or `strict` (same way you set the API key).
 - To show more results per page, change `maxResults` in `server.js` (max 50).
