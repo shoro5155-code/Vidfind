@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__VDF_TITLE__ · VidFind</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f7fb; --surface: #fff; --fg: #161a2b; --muted: #5d6480; --line: #dde1ee; --accent: #3b4fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1220; --surface: #181c2e; --fg: #e9ebf5; --muted: #9aa1bd; --line: #2a3050; --accent: #8a9bff; } }
+  * { box-sizing: border-box; } [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, sans-serif; }
+  header { background: var(--surface); border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  header a { text-decoration: none; font-size: 28px; letter-spacing: -.04em; font-weight: 800; color: var(--fg); }
+  header span { color: var(--accent); }
+  main { max-width: 1008px; margin: 0 auto; padding: 24px 24px 56px; }
+  a { color: var(--accent); } a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .back { display: inline-block; margin-bottom: 18px; text-decoration: none; }
+  video { display: block; width: 100%; max-height: 70vh; aspect-ratio: 16/9; background: #000; border-radius: 14px; }
+  h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.3; margin: 22px 0 8px; }
+  .meta, .status, .note { color: var(--muted); font-size: 14px; }
+  .description { white-space: pre-line; overflow-wrap: anywhere; }
+  .error { padding: 20px; border: 1px solid var(--line); border-radius: 14px; }
+  .file { display: inline-block; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 18px; text-decoration: none; font-weight: 600; font-size: 14px; }
+</style>
+</head>
+<body>
+<header><a href="/" aria-label="VidFind home">Vid<span>Find</span></a></header>
+<main>
+  <a class="back" href="__VDF_BACK__">← Back to results</a>
+  <p class="error" __VDF_ERROR_HIDDEN__>__VDF_ERROR__</p>
+  <section __VDF_VIDEO_HIDDEN__ aria-label="Watch video">
+    <video id="video" controls autoplay playsinline preload="metadata" poster="__VDF_POSTER__" aria-label="__VDF_TITLE__">
+      __VDF_SOURCES__
+      Your browser cannot play this video. Use “Open video file” below.
+    </video>
+    <p class="status" id="playback-status" role="status">Press play if the video does not start automatically.</p>
+    <h1>__VDF_TITLE__</h1>
+    <p class="meta">__VDF_CHANNEL__</p>
+    <a class="file" href="__VDF_FILE__" target="_blank" rel="noopener noreferrer">Open video file ↗</a>
+    <p class="description">__VDF_DESCRIPTION__</p>
+    <p class="note">This video plays directly from its publisher. The publisher’s file host must be allowed by your connection.</p>
+  </section>
+</main>
+<script>
+  const video = document.getElementById("video");
+  const status = document.getElementById("playback-status");
+  const sources = video.querySelectorAll("source");
+  let failed = 0;
+  function showError() {
+    status.hidden = false;
+    status.textContent = "This video could not load. The publisher’s file may be blocked or temporarily unavailable. You can also try Open video file.";
+  }
+  video.addEventListener("playing", () => { status.hidden = true; });
+  video.addEventListener("error", showError);
+  sources.forEach((source) => source.addEventListener("error", () => { if (++failed >= sources.length) showError(); }));
+</script>
+</body>
+</html>

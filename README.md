@@ -1,66 +1,57 @@
-# VidFind — your own video search website
+# VidFind
 
-Visitors type a search on **your** page. Your server quietly asks YouTube's official
-search API for matching videos and shows them on your page, where they also play.
-Nobody is sent to Google or YouTube.
+Search public videos and watch them on VidFind using the browser's native video
+player. Search results link to a server-rendered `/watch` page with public MP4
+sources from the publisher. No video-site embed or API key is required.
 
-```
-Visitor's browser  →  your server (/api/search)  →  YouTube Data API
-        ↑                                                  │
-        └──────────── results shown on your page ←─────────┘
-```
+## Run
 
-## 1. Get a free API key (about 5 minutes)
+Use Node.js 18 or newer. There are no runtime dependencies.
 
-1. Go to https://console.cloud.google.com and sign in.
-2. Create a new project (any name).
-3. Open **APIs & Services → Library**, search for **YouTube Data API v3**, and click **Enable**.
-4. Open **APIs & Services → Credentials → Create credentials → API key**. Copy the key.
-
-The free quota allows roughly 100 searches per day. You can request more from Google later.
-
-## 2. Run it on your computer
-
-You need Node.js 18 or newer (https://nodejs.org). No other installs are needed.
-
-Mac / Linux:
-```
-YOUTUBE_API_KEY=paste_your_key_here node server.js
+```sh
+npm start
 ```
 
-Windows (PowerShell):
+Open `http://localhost:3000`. `PORT` defaults to 3000; Render supplies it
+automatically. For Render, leave the root directory blank, use `npm install` as
+the build command and `node server.js` as the start command.
+
+## Catalog and filtering
+
+- NASA's Image and Video Library supplies science and space videos.
+- Internet Archive search is restricted to Prelinger Archives, FedFlix,
+  Computer Chronicles, Net Café, NASA Archive, TED Talks and Academic Films.
+- Explicit terms in queries, titles, descriptions, subjects and collection
+  metadata are filtered. Sensitive/restricted flags are checked, and the
+  publisher and collection checks run again before playback. These conservative
+  metadata checks are not frame-by-frame content classification and cannot
+  guarantee every publisher has labeled every video correctly.
+- The catalog is smaller than a general video search. Results must advertise
+  an MP4-compatible format; playback also requires a public MP4 in the manifest.
+- Publisher files stay on their original hosts. A user's network filter must
+  allow those hosts, including any Internet Archive storage redirect. VidFind
+  does not proxy video bytes, extract videos from other sites or change filters.
+- Videos stream online. This does not make the catalog available offline.
+- No credentials or paid service are required. An old `YOUTUBE_API_KEY` or
+  `SAFE_SEARCH` setting is unused by this version.
+
+## Reliability
+
+Search has both a JSON API and server-rendered HTML results. If the browser
+cannot read a background response, it opens the HTML results page. Watch pages
+and the native player also work without JavaScript. Pagination tracks each
+publisher separately. Provider responses are cached for five minutes in a
+bounded in-memory cache; requests time out, rate-limit cooldowns are respected,
+and a partial provider outage is shown to the user.
+
+```sh
+npm test
 ```
-$env:YOUTUBE_API_KEY="paste_your_key_here"; node server.js
-```
 
-Open http://localhost:3000 and search.
+Tests use local publisher fixtures and do not require network access.
 
-## 3. Put it online
+Official API references:
 
-The application files must be extracted in the GitHub repository root. Uploading
-only `vidfind.zip` does not give Render the files it needs to build and start.
-
-For the existing Render web service, use:
-
-- Runtime / language: **Node**
-- Root directory: leave blank (the repository root)
-- Build command: `npm install`
-- Start command: `node server.js`
-- Environment variable: `YOUTUBE_API_KEY`, with the private Google Cloud API key
-
-Commands are case-sensitive. Save the settings and environment variable, then
-deploy the latest commit. Keep the key on the server only; never put it in the HTML,
-the ZIP, or the GitHub repository. Render supplies `PORT` automatically.
-
-## Notes
-
-- If a background search response cannot be read, the browser opens a normal
-  results page rendered by the server. Direct `/?q=...` links also render their
-  results on the server, without requiring the browser to parse search JSON.
-- Run `npm test` for the search and browser-fallback regression checks. Tests use
-  a sample search provider and do not need the real API key or use its quota.
-- Safe search is **off** by default. To turn it back on, set the environment variable
-  `SAFE_SEARCH` to `moderate` or `strict` (same way you set the API key).
-- To show more results per page, change `maxResults` in `server.js` (max 50).
-- Want web pages or images too? Swap the API call for a general search API such as
-  Brave Search API or Google Programmable Search; the front end stays almost the same.
+- https://archive.org/help/aboutsearch.htm
+- https://archive.org/developers/md-read.html
+- https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf

@@ -1,7 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const { spawn } = require("node:child_process");
@@ -77,36 +76,13 @@ test("a server-rendered page does not repeat its search in the browser", () => {
   assert.match(html, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
 });
 
-test("the server returns HTML results and preserves the JSON API", async (t) => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "vidfind-test-"));
-  const preload = path.join(temporary, "provider.cjs");
-  fs.writeFileSync(preload, `
-    const http = require('node:http');
-    const listen = http.Server.prototype.listen;
-    http.Server.prototype.listen = function(...args) {
-      this.once('listening', () => console.log('__PORT__' + this.address().port));
-      return listen.apply(this, args);
-    };
-    global.fetch = async input => {
-      const url = new URL(input);
-      if (url.origin !== 'https://www.googleapis.com') throw Error('Unexpected provider');
-      if (url.searchParams.get('key') !== 'local-test-key') throw Error('Missing key');
-      if (url.searchParams.get('q') === 'provider-error') return new Response(JSON.stringify({error:{message:'Test provider failure'}}), {status:403});
-      return new Response(JSON.stringify({
-        nextPageToken: url.searchParams.has('pageToken') ? undefined : 'page-two',
-        items:[{id:{videoId:url.searchParams.get('pageToken') || 'video-one'},snippet:{
-          title:'A &quot;plane&quot; <script>unsafe</script>', channelTitle:'Crafts &amp; More',
-          publishedAt:'2026-10-25T12:00:00Z', description:'Fixture',
-          thumbnails:{medium:{url:'https://example.com/test.jpg'}}
-        }}]
-      }), {status:200});
-    };
-  `);
+test("the server searches filtered publishers and returns native video pages", async (t) => {
+  const preload = path.join(__dirname, "fixtures", "providers.cjs");
   const child = spawn(process.execPath, ["--require", preload, "server.js"], {
-    cwd: root, env: { ...process.env, PORT: "0", YOUTUBE_API_KEY: "local-test-key" },
+    cwd: root, env: { ...process.env, PORT: "0", YOUTUBE_API_KEY: "" },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  t.after(() => { child.kill(); fs.rmSync(temporary, { recursive: true, force: true }); });
+  t.after(() => child.kill());
   const port = await new Promise((resolve, reject) => {
     let output = "";
     const timeout = setTimeout(() => reject(Error("Server startup timed out")), 5000);
@@ -125,34 +101,88 @@ test("the server returns HTML results and preserves the JSON API", async (t) => 
   assert.equal(response.status, 200);
   assert.match(page, /<main id="main" hidden>/);
   assert.doesNotMatch(page, /__VDF_[A-Z_]+__/);
-  assert.doesNotMatch(page, /local-test-key/);
+  assert.doesNotMatch(page, /youtube|<iframe/i);
 
-  response = await fetch(base + "/?q=police");
+  response = await fetch(base + "/?q=planes");
   page = await response.text();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.match(page, /data-server-rendered="true"/);
-  assert.match(page, /data-video-id="video-one"/);
-  assert.match(page, /<h3>A &quot;plane&quot; &lt;script&gt;unsafe&lt;\/script&gt;<\/h3>/);
-  assert.match(page, /Crafts &amp; More/);
-  assert.doesNotMatch(page, /<script>unsafe<\/script>/);
+  assert.match(page, /data-video-id="archive:video-one"/);
+  assert.match(page, /<h3>A &quot;plane&quot; &amp; More<\/h3>/);
+  assert.match(page, /href="\/watch\?id=archive%3Avideo-one&amp;q=planes"/);
+  assert.doesNotMatch(page, /data-video-id="archive:(?:flagged|age-rated|encoded-flag|outside|old-format)"/);
 
-  response = await fetch(base + "/?q=" + encodeURIComponent('\"><script>query</script>') + "&pageToken=page-two");
+  response = await fetch(base + "/api/search?q=planes");
+  assert.match(response.headers.get("content-type"), /application\/json/);
+  const results = await response.json();
+  assert.deepEqual(results.results.map((v) => v.id), ["archive:video-one", "nasa:earth-one"]);
+  assert.deepEqual(JSON.parse(Buffer.from(results.nextPageToken, "base64url")), { archive: 2 });
+  response = await fetch(base + "/api/search?q=planes&pageToken=" + results.nextPageToken);
+  const second = await response.json();
+  assert.deepEqual(second.results.map((v) => v.id), ["archive:video-two"]);
+  assert.equal(second.nextPageToken, null);
+
+  response = await fetch(base + "/?q=" + encodeURIComponent('\"><script>query</script>'));
   page = await response.text();
-  assert.match(page, /data-video-id="page-two"/);
-  assert.match(page, /data-next-token=""/);
+  assert.equal(response.status, 200);
   assert.doesNotMatch(page, /<script>query<\/script>/);
 
-  response = await fetch(base + "/api/search?q=police");
-  assert.match(response.headers.get("content-type"), /application\/json/);
-  assert.equal((await response.json()).results[0].id, "video-one");
+  response = await fetch(base + "/watch?id=archive%3Avideo-one&q=planes");
+  page = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  assert.match(page, /<video[^>]*controls autoplay playsinline/);
+  assert.match(page, /<source src="https:\/\/archive.org\/download\/video-one\/video_512kb.mp4" type="video\/mp4">/);
+  assert.match(page, /href="\/\?q=planes"/);
+  assert.doesNotMatch(page, /private.mp4|original.mov|bad.mp4|youtube|<iframe|__VDF_[A-Z_]+__/i);
+
+  response = await fetch(base + "/watch?id=nasa%3Aearth-one");
+  page = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(page, /<source src="https:\/\/images-assets.nasa.gov\/video\/earth-one\/earth-one~medium.mp4"/);
+  assert.doesNotMatch(page, /evil.example|original.mov|src="http:/);
+
+  for (const id of ["outside", "flagged", "age-rated", "restricted", "private-only"]) {
+    response = await fetch(base + "/watch?id=archive:" + id);
+    assert.equal(response.status, 404, id);
+    assert.doesNotMatch(await response.text(), /<source src=/);
+  }
+  response = await fetch(base + "/watch?id=" + encodeURIComponent("https://example.com/video.mp4"));
+  assert.equal(response.status, 404);
+
+  response = await fetch(base + "/api/search?q=nsfw");
+  const blocked = await response.json();
+  assert.deepEqual(blocked.results, []);
+  assert.match(blocked.notice, /filtered video catalog/);
+  response = await fetch(base + "/api/search?q=partial");
+  const partial = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(partial.results.map((v) => v.id), ["nasa:earth-one"]);
+  assert.match(partial.notice, /Internet Archive is temporarily unavailable/);
+
   response = await fetch(base + "/api/search?q=");
   assert.equal(response.status, 400);
-
   response = await fetch(base + "/?q=provider-error");
   assert.equal(response.status, 503);
-  assert.match(await response.text(), /Test provider failure/);
+  assert.match(await response.text(), /Video search is temporarily unavailable/);
+  response = await fetch(base + "/api/search?q=planes&pageToken=invalid");
+  assert.equal(response.status, 400);
   response = await fetch(base + "/?q=" + "x".repeat(201));
   assert.equal(response.status, 400);
+});
+
+test("an older background search cannot overwrite a newer search", async () => {
+  let finishFirst;
+  const first = new Promise((resolve) => { finishFirst = resolve; });
+  const app = client(async (url) => url.includes("q=first") ? first : {
+    ok: true, text: async () => JSON.stringify({ results: [], nextPageToken: null }),
+  });
+  const old = app.context.runSearch("first", false);
+  await app.context.runSearch("second", false);
+  finishFirst({ ok: true, text: async () => "unreadable" });
+  await old;
+  assert.deepEqual(app.redirects, []);
+  assert.match(app.element("status").textContent, /second/);
 });

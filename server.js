@@ -1,23 +1,13 @@
-// VidFind — a tiny video search website.
-// The browser talks only to this server. This server talks to the YouTube Data API
-// behind the scenes, so visitors never leave your site.
-//
-// Run:  YOUTUBE_API_KEY=your_key_here node server.js
+// VidFind — search public video collections and play publisher-provided MP4s.
+// Run: node server.js
 // Then open http://localhost:3000
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { searchVideos, getVideo } = require("./providers");
 
 const PORT = process.env.PORT || 3000;
-const API_KEY = process.env.YOUTUBE_API_KEY;
-// Safe search level: "none" (off), "moderate", or "strict". Off unless you set SAFE_SEARCH.
-const SAFE_SEARCH = ["none", "moderate", "strict"].includes(process.env.SAFE_SEARCH) ? process.env.SAFE_SEARCH : "none";
-
-if (!API_KEY) {
-  console.error("Missing YOUTUBE_API_KEY. See README.md for how to get one.");
-  process.exit(1);
-}
 
 
 function sendJson(res, status, data) {
@@ -54,11 +44,12 @@ function sendPage(res, status, query = "", search = { results: [], nextPageToken
       const published = Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-US", {
         year: "numeric", month: "short", day: "numeric",
       });
-      return `<button class="card" type="button" data-video-id="${escapeHtml(video.id)}" data-video-title="${escapeHtml(title)}"><img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy"><h3>${escapeHtml(title)}</h3><div class="meta">${escapeHtml(channel)}${published ? " · " + published : ""}</div></button>`;
+      const href = "/watch?" + new URLSearchParams({ id: video.id, q: query });
+      return `<a class="card" href="${escapeHtml(href)}" data-video-id="${escapeHtml(video.id)}"><img src="${escapeHtml(video.thumbnail)}" alt="" loading="lazy"><h3>${escapeHtml(title)}</h3><div class="meta">${escapeHtml(channel)}${published ? " · " + published : ""}</div><span class="play-label">▶ Play video</span></a>`;
     }).join("");
     const message = error ? "Couldn't search right now: " + error : query
       ? search.results.length ? `${search.results.length} videos for “${query}”`
-        : `No videos found for “${query}”. Try different words.`
+        : `No direct videos found for “${query}”. Try another topic.`
       : "";
     const replacements = {
       BODY_CLASS: query ? "searched" : "",
@@ -67,8 +58,10 @@ function sendPage(res, status, query = "", search = { results: [], nextPageToken
       QUERY: escapeHtml(query),
       MAIN_HIDDEN: query ? "" : "hidden",
       STATUS: escapeHtml(message),
+      NOTICE: escapeHtml(search.notice || ""),
+      NOTICE_HIDDEN: search.notice ? "" : "hidden",
       RESULTS: results,
-      MORE_HIDDEN: search.nextPageToken && search.results.length ? "" : "hidden",
+      MORE_HIDDEN: search.nextPageToken ? "" : "hidden",
     };
     const body = template.replace(/__VDF_([A-Z_]+)__/g, (_, name) => replacements[name] ?? "");
     res.writeHead(status, {
@@ -80,40 +73,46 @@ function sendPage(res, status, query = "", search = { results: [], nextPageToken
   });
 }
 
-async function searchVideos(query, pageToken) {
-  const url = new URL("https://www.googleapis.com/youtube/v3/search");
-  url.search = new URLSearchParams({
-    part: "snippet",
-    type: "video",
-    maxResults: "12",
-    safeSearch: SAFE_SEARCH,
-    q: query,
-    key: API_KEY,
-    ...(pageToken ? { pageToken } : {}),
-  }).toString();
-
-  const r = await fetch(url);
-  const data = await r.json();
-  if (!r.ok) {
-    const msg = data?.error?.message || "Search provider returned an error.";
-    throw Object.assign(new Error(msg), { status: r.status });
-  }
-
-  return {
-    nextPageToken: data.nextPageToken || null,
-    results: (data.items || []).map((item) => ({
-      id: item.id.videoId,
-      title: item.snippet.title,
-      channel: item.snippet.channelTitle,
-      published: item.snippet.publishedAt,
-      description: item.snippet.description,
-      thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
-    })),
-  };
+function sendWatchPage(res, status, query, video, error = "") {
+  fs.readFile(path.join(__dirname, "watch.html"), "utf8", (err, template) => {
+    if (err) { res.writeHead(500); return res.end("Unable to load the video page."); }
+    const replacements = {
+      TITLE: escapeHtml(video?.title || "Video unavailable"),
+      CHANNEL: escapeHtml(video ? [video.channel, video.provider].filter(Boolean).join(" · ") : ""),
+      DESCRIPTION: escapeHtml(video?.description || ""),
+      POSTER: escapeHtml(video?.thumbnail || ""),
+      BACK: escapeHtml(query ? "/?" + new URLSearchParams({ q: query }) : "/"),
+      VIDEO_HIDDEN: video ? "" : "hidden",
+      ERROR_HIDDEN: error ? "" : "hidden",
+      ERROR: escapeHtml(error),
+      FILE: escapeHtml(video?.sources[0]?.url || ""),
+      SOURCES: (video?.sources || []).map((source) => `<source src="${escapeHtml(source.url)}" type="${escapeHtml(source.type)}">`).join(""),
+    };
+    const body = template.replace(/__VDF_([A-Z_]+)__/g, (_, name) => replacements[name] ?? "");
+    res.writeHead(status, {
+      "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+    });
+    res.end(body);
+  });
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url, "http://localhost");
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { Allow: "GET, HEAD" }); return res.end("Method not allowed");
+  }
+
+  if (url.pathname === "/watch") {
+    const query = (url.searchParams.get("q") || "").slice(0, 200);
+    try {
+      const video = await getVideo(url.searchParams.get("id"));
+      return sendWatchPage(res, 200, query, video);
+    } catch (err) {
+      console.error("Video: " + err.message);
+      return sendWatchPage(res, err.status || 502, query, null, err.message);
+    }
+  }
 
   // Back end: the search endpoint your page calls
   if (url.pathname === "/api/search") {
@@ -125,7 +124,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, out);
     } catch (err) {
       console.error(err.message);
-      return sendJson(res, err.status === 403 ? 503 : 502, { error: err.message });
+      return sendJson(res, err.status || 502, { error: err.message });
     }
   }
 
@@ -139,7 +138,7 @@ const server = http.createServer(async (req, res) => {
       return sendPage(res, 200, q, search);
     } catch (err) {
       console.error(err.message);
-      return sendPage(res, err.status === 403 ? 503 : 502, q, undefined, err.message);
+      return sendPage(res, err.status || 502, q, undefined, err.message);
     }
   }
   res.writeHead(404); res.end("Not found");
